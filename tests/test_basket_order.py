@@ -1,45 +1,58 @@
-import os, sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from api_helper import NorenApiPy, Order
+```python
+import os
+import sys
 import logging
-import yaml
 import timeit
 
-#enable dbug to see request and responses
-logging.basicConfig(level=logging.DEBUG)
+# Add the parent directory to the Python path
+sys.path.insert(
+    0,
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
-#start of our program
-api = NorenApiPy()
+from api_helper import NorenApiPy, Order
 
-#set token and user id
-#paste the token generated using the login flow described 
-# in LOGIN FLOW of https://pi.flattrade.in/docs
-usersession='token here'
-userid = 'user id here'
+# Enable debug logging
+logging.basicConfig(level=logging.INFO)
 
-ret = api.set_session(userid= userid, password = '', usertoken= usersession)
+# Initialize API client
+client = NorenApiPy()
 
-orders = []
+# Authentication placeholders
+# Replace these values with valid credentials before actual use.
+session_token = "YOUR_SESSION_TOKEN"
+account_id = "YOUR_USER_ID"
 
-for index in range(1,5):
-    order = Order()
-    order.buy_or_sell = 'B'
-    order.product_type='C'
-    order.exchange='NSE'
-    order.tradingsymbol='INFY-EQ'
-    order.quantity=index
-    order.discloseqty=0
-    order.price_type='LMT'
-    order.price=1500.00
-    order.trigger_price=None
-    order.retention='DAY'
-    order.remarks='my_order_001'
+# Create API session
+session = client.set_session(
+    userid=account_id,
+    password="",
+    usertoken=session_token
+)
 
-    orders.append(order)
+# Prepare sample basket orders
+basket_orders = []
 
-starttime = timeit.default_timer()
-ret = api.place_basket(orders)
-print("The time difference is :", timeit.default_timer() - starttime)
+for quantity in range(1, 5):
+    trade = Order()
 
+    trade.buy_or_sell = "B"
+    trade.product_type = "C"
+    trade.exchange = "NSE"
+    trade.tradingsymbol = "INFY-EQ"
 
-print(ret)
+    trade.quantity = quantity
+    trade.discloseqty = 0
+
+    trade.price_type = "LMT"
+    trade.price = 1500.00
+    trade.trigger_price = None
+
+    trade.retention = "DAY"
+    trade.remarks = "sample_basket_order"
+
+    basket_orders.append(trade)
+
+# Measure API execution time
+start = timeit.default
+```
