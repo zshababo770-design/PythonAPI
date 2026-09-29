@@ -3,144 +3,262 @@ import logging
 import time
 import pandas as pd
 
-#sample
+# Enable debug logging
 logging.basicConfig(level=logging.DEBUG)
 
-#flag to tell us if the websocket is open
+# Flag to tell us if the websocket is open
 socket_opened = False
 
-#application callbacks
+
+# -----------------------------
+# WebSocket callbacks
+# -----------------------------
+
 def event_handler_order_update(message):
-    print("order event: " + str(message))
+    print("Order event:", message)
 
 
 def event_handler_quote_update(message):
-    #e   Exchange
-    #tk  Token
-    #lp  LTP
-    #pc  Percentage change
-    #v   volume
-    #o   Open price
-    #h   High price
-    #l   Low price
-    #c   Close price
-    #ap  Average trade price
+    print(
+        "Quote event: "
+        + time.strftime("%d-%m-%Y %H:%M:%S")
+        + " "
+        + str(message)
+    )
 
-    print("quote event: {0}".format(time.strftime('%d-%m-%Y %H:%M:%S')) + str(message))
-    
 
 def open_callback():
     global socket_opened
+
     socket_opened = True
-    print('app is connected')
-    
-    api.subscribe('NSE|11630')
-    #api.subscribe(['NSE|22', 'BSE|522032'])
+    print("App is connected")
 
-#end of callbacks
+    # Subscribe to NSE token 11630
+    api.subscribe("NSE|11630")
 
-def get_time(time_string):
-    data = time.strptime(time_string,'%d-%m-%Y %H:%M:%S')
-
-    return time.mktime(data)
-
-#start of our program
-api = NorenApiPy()
+    # Example:
+    # api.subscribe(["NSE|22", "BSE|522032"])
 
 
-#set token and user id
-#paste the token generated using the login flow described 
-# in LOGIN FLOW of https://pi.flattrade.in/docs
-usersession='token here'
-userid = 'user id here'
+# -----------------------------
+# Main program
+# -----------------------------
 
-ret = api.set_session(userid= userid, password = '', usertoken= usersession)
+def main():
 
-if ret != None:   
+    # Start API
+    api = NorenApiPy()
+
+    # Your Flattrade login information
+    user_session = "YOUR_USER_TOKEN"
+    user_id = "YOUR_USER_ID"
+
+    # Create session
+    ret = api.set_session(
+        userid=user_id,
+        password="",
+        usertoken=user_session
+    )
+
+    if ret is None:
+        print("Failed to create API session.")
+        return
+
+    print("API session created successfully.")
+
     while True:
-        print('f => find symbol')    
-        print('m => get quotes')
-        print('p => contract info n properties')    
-        print('v => get 1 min market data')
-        print('t => get today 1 min market data')
-        print('d => get daily data')
-        print('o => get option chain')
-        print('s => start_websocket')
-        print('q => quit')
 
-        prompt1=input('what shall we do? ').lower()                    
-        
-        if prompt1 == 'v':
+        print("\n==============================")
+        print("f => find symbol")
+        print("m => get quotes")
+        print("p => contract info / properties")
+        print("v => get 1 min market data")
+        print("t => get today's 1 min market data")
+        print("d => get daily data")
+        print("o => get option chain")
+        print("s => start websocket")
+        print("q => quit")
+        print("==============================")
+
+        prompt1 = input("What shall we do? ").lower().strip()
+
+        # -----------------------------
+        # 1-minute historical data
+        # -----------------------------
+        if prompt1 == "v":
+
             start_time = "13-07-2021 09:10:00"
-            #end_time = time.time()
-            
+            end_time = "13-07-2021 09:20:00"
+
             start_secs = get_time(start_time)
+            end_secs = get_time(end_time)
 
-            end_time = get_time("13-07-2021 09:20:00")
-            ret = api.get_time_price_series(exchange='NSE', token='22', starttime=start_secs, endtime=end_time)
-            
-            df = pd.DataFrame.from_dict(ret)
-            print(df)            
-            print(f'{start_secs} to {end_time}')
+            ret = api.get_time_price_series(
+                exchange="NSE",
+                token="22",
+                starttime=start_secs,
+                endtime=end_secs
+            )
 
-        elif prompt1 == 't':
-            ret = api.get_time_price_series(exchange='NSE', token='22')
-            
-            df = pd.DataFrame.from_dict(ret)
-            print(df)            
-            
+            if ret:
+                df = pd.DataFrame.from_dict(ret)
+                print(df)
+            else:
+                print("No market data returned.")
 
-        elif prompt1 == 'f':
-            exch  = 'NFO'
-            query = 'BANKNIFTY 30DEC CE'
-            ret = api.searchscrip(exchange=exch, searchtext=query)
+            print(f"{start_secs} to {end_secs}")
+
+        # -----------------------------
+        # Today's 1-minute data
+        # -----------------------------
+        elif prompt1 == "t":
+
+            ret = api.get_time_price_series(
+                exchange="NSE",
+                token="22"
+            )
+
+            if ret:
+                df = pd.DataFrame.from_dict(ret)
+                print(df)
+            else:
+                print("No market data returned.")
+
+        # -----------------------------
+        # Find symbol
+        # -----------------------------
+        elif prompt1 == "f":
+
+            exchange = "NFO"
+            query = "BANKNIFTY 30DEC CE"
+
+            ret = api.searchscrip(
+                exchange=exchange,
+                searchtext=query
+            )
+
             print(ret)
 
-            if ret != None:
-                symbols = ret['values']
+            if ret and "values" in ret:
+
+                symbols = ret["values"]
+
                 for symbol in symbols:
-                    print('{0} token is {1}'.format(symbol['tsym'], symbol['token']))
+                    print(
+                        f"{symbol['tsym']} token is {symbol['token']}"
+                    )
 
-        elif prompt1 == 'd':
-            exch  = 'NSE'
-            tsym = 'RELIANCE-EQ'
-            ret = api.get_daily_price_series(exchange=exch, tradingsymbol=tsym, startdate=0)
+        # -----------------------------
+        # Daily data
+        # -----------------------------
+        elif prompt1 == "d":
+
+            exchange = "NSE"
+            trading_symbol = "RELIANCE-EQ"
+
+            ret = api.get_daily_price_series(
+                exchange=exchange,
+                tradingsymbol=trading_symbol,
+                startdate=0
+            )
+
             print(ret)
 
-        elif prompt1 == 'p':
-            exch  = 'NSE'
-            token = '22'
-            ret = api.get_security_info(exchange=exch, token=token)
+        # -----------------------------
+        # Security information
+        # -----------------------------
+        elif prompt1 == "p":
+
+            exchange = "NSE"
+            token = "22"
+
+            ret = api.get_security_info(
+                exchange=exchange,
+                token=token
+            )
+
             print(ret)
 
-        elif prompt1 == 'm':
-            exch  = 'NSE'
-            token = '22'
-            ret = api.get_quotes(exchange=exch, token=token)
+        # -----------------------------
+        # Current quote
+        # -----------------------------
+        elif prompt1 == "m":
+
+            exchange = "NSE"
+            token = "22"
+
+            ret = api.get_quotes(
+                exchange=exchange,
+                token=token
+            )
+
             print(ret)
-        elif prompt1 == 'o':
-            exch  = 'NFO'
-            tsym = 'COFORGE30DEC21F'
-            chain = api.get_option_chain(exchange=exch, tradingsymbol=tsym, strikeprice=3500, count=2)
 
-            chainscrips = []
-            for scrip in chain['values']:
-                scripdata = api.get_quotes(exchange=scrip['exch'], token=scrip['token'])
-                chainscrips.append(scripdata)
+        # -----------------------------
+        # Option chain
+        # -----------------------------
+        elif prompt1 == "o":
 
-            print(chainscrips)
+            exchange = "NFO"
+            trading_symbol = "COFORGE30DEC21F"
 
-        elif prompt1 == 's':
-            if socket_opened == True:
-                print('websocket already opened')
+            chain = api.get_option_chain(
+                exchange=exchange,
+                tradingsymbol=trading_symbol,
+                strikeprice=3500,
+                count=2
+            )
+
+            if chain and "values" in chain:
+
+                chain_scrips = []
+
+                for scrip in chain["values"]:
+
+                    scrip_data = api.get_quotes(
+                        exchange=scrip["exch"],
+                        token=scrip["token"]
+                    )
+
+                    chain_scrips.append(scrip_data)
+
+                print(chain_scrips)
+
+            else:
+                print("No option chain data returned.")
+
+        # -----------------------------
+        # Start WebSocket
+        # -----------------------------
+        elif prompt1 == "s":
+
+            if socket_opened:
+                print("WebSocket already opened.")
                 continue
-            ret = api.start_websocket(order_update_callback=event_handler_order_update, subscribe_callback=event_handler_quote_update, socket_open_callback=open_callback)
+
+            ret = api.start_websocket(
+                order_update_callback=event_handler_order_update,
+                subscribe_callback=event_handler_quote_update,
+                socket_open_callback=open_callback
+            )
+
             print(ret)
 
-        else:
+        # -----------------------------
+        # Quit
+        # -----------------------------
+        elif prompt1 == "q":
+
             ret = api.logout()
             print(ret)
-            print('Fin') #an answer that wouldn't be yes or no
+
+            print("Fin")
             break
 
-    
+        else:
+            print("Invalid option. Please choose f, m, p, v, t, d, o, s, or q.")
+
+
+# Only run when this file is executed directly
+if __name__ == "__main__":
+    main()
