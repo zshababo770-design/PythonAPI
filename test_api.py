@@ -1,21 +1,34 @@
 from api_helper import NorenApiPy
 import logging
 
-#enable dbug to see request and responses
+# Enable debug logging to see requests and responses
 logging.basicConfig(level=logging.DEBUG)
 
-#start of our program
-api = NorenApiPy()
 
-#set token and user id
-#paste the token generated using the login flow described 
-# in LOGIN FLOW of https://pi.flattrade.in/docs
-usersession='token here'
-userid = 'user id here'
+def main():
+    # Start API
+    api = NorenApiPy()
 
-ret = api.set_session(userid= userid, password = '', usertoken= usersession)
+    # Replace these with your actual Flattrade credentials
+    user_id = "YOUR_USER_ID"
+    user_session = "YOUR_USER_TOKEN"
 
-ret = api.get_limits()
- 
-print(ret)
+    # Create API session
+    ret = api.set_session(
+        userid=user_id,
+        password="",
+        usertoken=user_session
+    )
 
+    print("Session response:")
+    print(ret)
+
+    # Get account limits
+    ret = api.get_limits()
+
+    print("Account limits:")
+    print(ret)
+
+
+if __name__ == "__main__":
+    main()
