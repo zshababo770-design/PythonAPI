@@ -1,126 +1,254 @@
 from api_helper import NorenApiPy, get_time
 import logging
-import pandas as pd
 
+# Enable debug logging
 logging.basicConfig(level=logging.DEBUG)
 
-#flag to tell us if the websocket is open
+# Flag to tell us if the websocket is open
 socket_opened = False
 
-#application callbacks
+# API object
+api = NorenApiPy()
+
+
+# -----------------------------
+# WebSocket callbacks
+# -----------------------------
+
 def event_handler_order_update(message):
-    print("order event: " + str(message))
+    print("Order event:", message)
 
 
 def event_handler_quote_update(message):
-    #e   Exchange
-    #tk  Token
-    #lp  LTP
-    #pc  Percentage change
-    #v   volume
-    #o   Open price
-    #h   High price
-    #l   Low price
-    #c   Close price
-    #ap  Average trade price
+    print("Quote event:", message)
 
-    print("quote event: " + str(message))
-    
 
 def open_callback():
     global socket_opened
+
     socket_opened = True
-    print('app is connected')
-    #api.subscribe_orders()
-    api.subscribe('NSE|22')
-    #api.subscribe(['NSE|22', 'BSE|522032'])
+    print("App is connected")
 
-#end of callbacks
+    # Subscribe to INFY
+    api.subscribe("NSE|22")
+
+    # Example:
+    # api.subscribe(["NSE|22", "BSE|522032"])
 
 
-#start of our program
-api = NorenApiPy()
+# -----------------------------
+# Main program
+# -----------------------------
 
-#set token and user id
-#paste the token generated using the login flow described 
-# in LOGIN FLOW of https://pi.flattrade.in/docs
-usersession='token here'
-userid = 'user id here'
+def main():
 
-ret = api.set_session(userid= userid, password = '', usertoken= usersession)
+    # Flattrade login information
+    user_session = "YOUR_USER_TOKEN"
+    user_id = "YOUR_USER_ID"
 
-if ret != None:   
+    # Create API session
+    ret = api.set_session(
+        userid=user_id,
+        password="",
+        usertoken=user_session
+    )
+
+    if ret is None:
+        print("Failed to create API session.")
+        return
+
+    print("API session created successfully.")
+
     while True:
-        print('p => place order')
-        print('m => modify order')
-        print('c => cancel order')
-        print('y => order history')
-        print('o => get order book')
-        print('h => get holdings')
-        print('l => get limits')
-        print('k => get positions')
-        print('d => get daily mtm')
-        print('s => start_websocket')
-        print('q => quit')
 
-        prompt1=input('what shall we do? ').lower()        
-            
-        if prompt1 == 'p':
-            ret = api.place_order(buy_or_sell='B', product_type='C',
-                        exchange='NSE', tradingsymbol='INFY-EQ', 
-                        quantity=1, discloseqty=0,price_type='LMT', price=1500.00, trigger_price=None,
-                        retention='DAY', remarks='my_order_001')
+        print("\n==============================")
+        print("p => place order")
+        print("m => modify order")
+        print("c => cancel order")
+        print("y => order history")
+        print("o => get order book")
+        print("h => get holdings")
+        print("l => get limits")
+        print("k => get positions")
+        print("d => get daily MTM")
+        print("s => start websocket")
+        print("q => quit")
+        print("==============================")
+
+        prompt1 = input("What shall we do? ").lower().strip()
+
+        # -----------------------------
+        # Place order
+        # -----------------------------
+        if prompt1 == "p":
+
+            ret = api.place_order(
+                buy_or_sell="B",
+                product_type="C",
+                exchange="NSE",
+                tradingsymbol="INFY-EQ",
+                quantity=1,
+                discloseqty=0,
+                price_type="LMT",
+                price=1500.00,
+                trigger_price=None,
+                retention="DAY",
+                remarks="my_order_001"
+            )
+
             print(ret)
 
-        elif prompt1 == 'm':
-            orderno=input('Enter orderno:').lower()        
-            ret = api.modify_order(exchange='NSE', tradingsymbol='INFY-EQ', orderno=orderno,
-                                   newquantity=2, newprice_type='LMT', newprice=1505.00)
+        # -----------------------------
+        # Modify order
+        # -----------------------------
+        elif prompt1 == "m":
+
+            orderno = input("Enter order number: ").strip()
+
+            ret = api.modify_order(
+                exchange="NSE",
+                tradingsymbol="INFY-EQ",
+                orderno=orderno,
+                newquantity=2,
+                newprice_type="LMT",
+                newprice=1505.00
+            )
+
             print(ret)
 
-        elif prompt1 == 'c':
-            orderno=input('Enter orderno:').lower()        
-            ret = api.cancel_order(orderno=orderno)
+        # -----------------------------
+        # Cancel order
+        # -----------------------------
+        elif prompt1 == "c":
+
+            orderno = input("Enter order number: ").strip()
+
+            ret = api.cancel_order(
+                orderno=orderno
+            )
+
             print(ret)
 
-        elif prompt1 == 'y':
-            orderno=input('Enter orderno:').lower()        
-            ret = api.single_order_history(orderno=orderno)
+        # -----------------------------
+        # Order history
+        # -----------------------------
+        elif prompt1 == "y":
+
+            orderno = input("Enter order number: ").strip()
+
+            ret = api.single_order_history(
+                orderno=orderno
+            )
+
             print(ret)
-            
-        elif prompt1 == 'o':            
+
+        # -----------------------------
+        # Order book
+        # -----------------------------
+        elif prompt1 == "o":
+
             ret = api.get_order_book()
+
             print(ret)
 
-        elif prompt1 == 'h':            
+        # -----------------------------
+        # Holdings
+        # -----------------------------
+        elif prompt1 == "h":
+
             ret = api.get_holdings()
+
             print(ret)
 
-        elif prompt1 == 'l':            
+        # -----------------------------
+        # Limits
+        # -----------------------------
+        elif prompt1 == "l":
+
             ret = api.get_limits()
+
             print(ret)
 
-        elif prompt1 == 'k':            
+        # -----------------------------
+        # Positions
+        # -----------------------------
+        elif prompt1 == "k":
+
             ret = api.get_positions()
+
             print(ret)
-        elif prompt1 == 'd':                        
-            while True:
-                ret = api.get_positions()
-                mtm = 0
-                pnl = 0
-                for i in ret:
-                    mtm += float(i['urmtom'])
-                    pnl += float(i['rpnl'])
-                    day_m2m = mtm + pnl
-                print(day_m2m)
-        elif prompt1 == 's':
-            if socket_opened == True:
-                print('websocket already opened')
+
+        # -----------------------------
+        # Daily MTM / P&L
+        # -----------------------------
+        elif prompt1 == "d":
+
+            ret = api.get_positions()
+
+            if not ret:
+                print("No position data available.")
                 continue
-            ret = api.start_websocket(order_update_callback=event_handler_order_update, subscribe_callback=event_handler_quote_update, socket_open_callback=open_callback)
+
+            mtm = 0.0
+            pnl = 0.0
+
+            for position in ret:
+                try:
+                    mtm += float(position.get("urmtom", 0))
+                    pnl += float(position.get("rpnl", 0))
+                except (ValueError, TypeError):
+                    continue
+
+            day_mtm = mtm + pnl
+
+            print("\n------------------------------")
+            print(f"Unrealized MTM : {mtm:.2f}")
+            print(f"Realized P&L   : {pnl:.2f}")
+            print(f"Day MTM / P&L  : {day_mtm:.2f}")
+            print("------------------------------")
+
+        # -----------------------------
+        # Start WebSocket
+        # -----------------------------
+        elif prompt1 == "s":
+
+            if socket_opened:
+                print("WebSocket already opened.")
+                continue
+
+            ret = api.start_websocket(
+                order_update_callback=event_handler_order_update,
+                subscribe_callback=event_handler_quote_update,
+                socket_open_callback=open_callback
+            )
+
             print(ret)
-        else:
-            print('Fin') #an answer that wouldn't be yes or no
+
+        # -----------------------------
+        # Quit
+        # -----------------------------
+        elif prompt1 == "q":
+
+            try:
+                ret = api.logout()
+                print(ret)
+            except Exception as e:
+                print("Logout error:", e)
+
+            print("Fin")
             break
 
-    
+        # -----------------------------
+        # Invalid option
+        # -----------------------------
+        else:
+
+            print(
+                "Invalid option. "
+                "Please choose p, m, c, y, o, h, l, k, d, s, or q."
+            )
+
+
+# Only run when this file is executed directly
+if __name__ == "__main__":
+    main()
