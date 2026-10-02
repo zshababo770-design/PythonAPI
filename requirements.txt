@@ -1,5 +1,14 @@
+# HTTP client
 requests
+
+# WebSocket client
 websocket_client
+
+# Local Noren REST API package
 ./dist/norenrestapi-0.0.30-py3-none-any.whl
+
+# Data processing
 pandas
+
+# YAML configuration support
 pyyaml
