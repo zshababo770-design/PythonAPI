@@ -1,264 +1,137 @@
-from api_helper import NorenApiPy, get_time
-import logging
-import time
-import pandas as pd
 
-# Enable debug logging
-logging.basicConfig(level=logging.DEBUG)
+    def connect(self):
+        user_id = os.getenv("FLATTRADE_USER_ID") or ask("Flattrade user ID")
+        token = os.getenv("FLATTRADE_USER_TOKEN") or getpass.getpass("Session token: ").strip()
+        if not token or token == "YOUR_USER_TOKEN" or user_id == "YOUR_USER_ID":
+            raise ValueError("Enter a real user ID and session token.")
+        response = self.api.set_session(userid=user_id, password="", usertoken=token)
+        if isinstance(response, dict) and response.get("stat") == "Not_Ok":
+            raise RuntimeError(response.get("emsg", "Session setup failed."))
+        self.session_created = True
+        # Validate with an authenticated request instead of assuming the setter's
+        # return value confirms or rejects the credentials.
+        response = self.api.get_limits()
+        if not isinstance(response, dict) or response.get("stat") != "Ok":
+            error = response.get("emsg", "No successful response.") if isinstance(response, dict) else "No response."
+            raise RuntimeError(f"Session validation failed: {error}")
+        print("API session verified.")
 
-# Flag to tell us if the websocket is open
-socket_opened = False
+    def start_socket(self):
+        if self.socket_started:
+            print("WebSocket is already started. Use x to stop it before restarting.")
+            return
+        raw = ask("Subscriptions (comma-separated EXCHANGE|TOKEN)", "NSE|11630")
+        subscriptions = list(dict.fromkeys(s.strip() for s in raw.split(",") if s.strip()))
+        if not subscriptions or any(len(s.split("|")) != 2 or not all(s.split("|")) for s in subscriptions):
+            raise ValueError("Use NSE|11630 or NSE|22,BSE|522032.")
+        self.subscriptions = subscriptions
+        self.socket_opened.clear()
+        self.socket_started = True
+        try:
+            self.api.start_websocket(
+                order_update_callback=self.on_order,
+                subscribe_callback=self.on_quote,
+                socket_open_callback=self.on_open,
+                socket_close_callback=self.on_close,
+            )
+        except Exception:
+            self.socket_started = False
+            raise
+        if not self.socket_opened.wait(timeout=10):
+            print("Still waiting for the connection. Use x to stop it before retrying.")
 
+    def stop_socket(self):
+        if not self.socket_started:
+            return
+        close = getattr(self.api, "close_websocket", None)
+        if not callable(close):
+            raise RuntimeError("This SDK has no close_websocket method; restart the program to reset the socket.")
+        close()
+        self.socket_started = False
+        self.socket_opened.clear()
 
-# -----------------------------
-# WebSocket callbacks
-# -----------------------------
+    def history(self, today=False):
+        exchange = ask("Exchange", "NSE").upper()
+        token = ask("Token", "22")
+        if today:
+            start = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
+            end = datetime.now(IST)
+        else:
+            fmt = "%d-%m-%Y %H:%M:%S"
+            start = datetime.strptime(ask("Start (DD-MM-YYYY HH:MM:SS, IST)"), fmt).replace(tzinfo=IST)
+            end = datetime.strptime(ask("End (DD-MM-YYYY HH:MM:SS, IST)"), fmt).replace(tzinfo=IST)
+        if end <= start:
+            raise ValueError("End time must be later than start time.")
+        show(self.api.get_time_price_series(exchange=exchange, token=token,
+             starttime=int(start.timestamp()), endtime=int(end.timestamp()), interval=1))
 
-def event_handler_order_update(message):
-    print("Order event:", message)
+    def run(self):
+        while True:
+            print("\nf: find symbol | m: quotes | p: security info | v: historical minutes")
+            print("t: today's minutes | d: daily data | o: option chain")
+            print("s: start WebSocket | x: stop WebSocket | q: quit")
+            command = input("Choose: ").strip().lower()
+            try:
+                if command == "q":
+                    break
+                elif command == "f":
+                    show(self.api.searchscrip(exchange=ask("Exchange", "NSE").upper(), searchtext=ask("Symbol search")))
+                elif command in ("m", "p"):
+                    method = self.api.get_quotes if command == "m" else self.api.get_security_info
+                    show(method(exchange=ask("Exchange", "NSE").upper(), token=ask("Token", "22")))
+                elif command in ("v", "t"):
+                    self.history(today=command == "t")
+                elif command == "d":
+                    show(self.api.get_daily_price_series(exchange=ask("Exchange", "NSE").upper(),
+                         tradingsymbol=ask("Trading symbol", "RELIANCE-EQ"), startdate=0))
+                elif command == "o":
+                    exchange = ask("Exchange", "NFO").upper()
+                    symbol = ask("Current trading symbol (use f to find it)")
+                    strike = float(ask("Strike price"))
+                    count = int(ask("Count", "2"))
+                    if strike <= 0 or count <= 0:
+                        raise ValueError("Strike price and count must be positive.")
+                    chain = self.api.get_option_chain(exchange=exchange, tradingsymbol=symbol,
+                                                     strikeprice=strike, count=count)
+                    if isinstance(chain, dict) and chain.get("values"):
+                        for contract in chain["values"]:
+                            print("\n", contract.get("tsym", "Contract"))
+                            show(self.api.get_quotes(exchange=contract["exch"], token=contract["token"]))
+                    else:
+                        show(chain)
+                elif command == "s":
+                    self.start_socket()
+                elif command == "x":
+                    self.stop_socket()
+                else:
+                    print("Choose one of the listed options.")
+            except Exception as exc:
+                LOG.error("Request failed: %s", exc)
 
+    def cleanup(self):
+        try:
+            self.stop_socket()
+        except Exception as exc:
+            LOG.error("WebSocket shutdown failed: %s", exc)
+        if self.session_created:
+            try:
+                self.api.logout()
+            except Exception as exc:
+                LOG.error("Logout failed: %s", exc)
 
-def event_handler_quote_update(message):
-    print(
-        "Quote event: "
-        + time.strftime("%d-%m-%Y %H:%M:%S")
-        + " "
-        + str(message)
-    )
-
-
-def open_callback():
-    global socket_opened
-
-    socket_opened = True
-    print("App is connected")
-
-    # Subscribe to NSE token 11630
-    api.subscribe("NSE|11630")
-
-    # Example:
-    # api.subscribe(["NSE|22", "BSE|522032"])
-
-
-# -----------------------------
-# Main program
-# -----------------------------
 
 def main():
-
-    # Start API
-    api = NorenApiPy()
-
-    # Your Flattrade login information
-    user_session = "YOUR_USER_TOKEN"
-    user_id = "YOUR_USER_ID"
-
-    # Create session
-    ret = api.set_session(
-        userid=user_id,
-        password="",
-        usertoken=user_session
-    )
-
-    if ret is None:
-        print("Failed to create API session.")
-        return
-
-    print("API session created successfully.")
-
-    while True:
-
-        print("\n==============================")
-        print("f => find symbol")
-        print("m => get quotes")
-        print("p => contract info / properties")
-        print("v => get 1 min market data")
-        print("t => get today's 1 min market data")
-        print("d => get daily data")
-        print("o => get option chain")
-        print("s => start websocket")
-        print("q => quit")
-        print("==============================")
-
-        prompt1 = input("What shall we do? ").lower().strip()
-
-        # -----------------------------
-        # 1-minute historical data
-        # -----------------------------
-        if prompt1 == "v":
-
-            start_time = "13-07-2021 09:10:00"
-            end_time = "13-07-2021 09:20:00"
-
-            start_secs = get_time(start_time)
-            end_secs = get_time(end_time)
-
-            ret = api.get_time_price_series(
-                exchange="NSE",
-                token="22",
-                starttime=start_secs,
-                endtime=end_secs
-            )
-
-            if ret:
-                df = pd.DataFrame.from_dict(ret)
-                print(df)
-            else:
-                print("No market data returned.")
-
-            print(f"{start_secs} to {end_secs}")
-
-        # -----------------------------
-        # Today's 1-minute data
-        # -----------------------------
-        elif prompt1 == "t":
-
-            ret = api.get_time_price_series(
-                exchange="NSE",
-                token="22"
-            )
-
-            if ret:
-                df = pd.DataFrame.from_dict(ret)
-                print(df)
-            else:
-                print("No market data returned.")
-
-        # -----------------------------
-        # Find symbol
-        # -----------------------------
-        elif prompt1 == "f":
-
-            exchange = "NFO"
-            query = "BANKNIFTY 30DEC CE"
-
-            ret = api.searchscrip(
-                exchange=exchange,
-                searchtext=query
-            )
-
-            print(ret)
-
-            if ret and "values" in ret:
-
-                symbols = ret["values"]
-
-                for symbol in symbols:
-                    print(
-                        f"{symbol['tsym']} token is {symbol['token']}"
-                    )
-
-        # -----------------------------
-        # Daily data
-        # -----------------------------
-        elif prompt1 == "d":
-
-            exchange = "NSE"
-            trading_symbol = "RELIANCE-EQ"
-
-            ret = api.get_daily_price_series(
-                exchange=exchange,
-                tradingsymbol=trading_symbol,
-                startdate=0
-            )
-
-            print(ret)
-
-        # -----------------------------
-        # Security information
-        # -----------------------------
-        elif prompt1 == "p":
-
-            exchange = "NSE"
-            token = "22"
-
-            ret = api.get_security_info(
-                exchange=exchange,
-                token=token
-            )
-
-            print(ret)
-
-        # -----------------------------
-        # Current quote
-        # -----------------------------
-        elif prompt1 == "m":
-
-            exchange = "NSE"
-            token = "22"
-
-            ret = api.get_quotes(
-                exchange=exchange,
-                token=token
-            )
-
-            print(ret)
-
-        # -----------------------------
-        # Option chain
-        # -----------------------------
-        elif prompt1 == "o":
-
-            exchange = "NFO"
-            trading_symbol = "COFORGE30DEC21F"
-
-            chain = api.get_option_chain(
-                exchange=exchange,
-                tradingsymbol=trading_symbol,
-                strikeprice=3500,
-                count=2
-            )
-
-            if chain and "values" in chain:
-
-                chain_scrips = []
-
-                for scrip in chain["values"]:
-
-                    scrip_data = api.get_quotes(
-                        exchange=scrip["exch"],
-                        token=scrip["token"]
-                    )
-
-                    chain_scrips.append(scrip_data)
-
-                print(chain_scrips)
-
-            else:
-                print("No option chain data returned.")
-
-        # -----------------------------
-        # Start WebSocket
-        # -----------------------------
-        elif prompt1 == "s":
-
-            if socket_opened:
-                print("WebSocket already opened.")
-                continue
-
-            ret = api.start_websocket(
-                order_update_callback=event_handler_order_update,
-                subscribe_callback=event_handler_quote_update,
-                socket_open_callback=open_callback
-            )
-
-            print(ret)
-
-        # -----------------------------
-        # Quit
-        # -----------------------------
-        elif prompt1 == "q":
-
-            ret = api.logout()
-            print(ret)
-
-            print("Fin")
-            break
-
-        else:
-            print("Invalid option. Please choose f, m, p, v, t, d, o, s, or q.")
+    app = MarketApp()
+    try:
+        app.connect()
+        app.run()
+    except (KeyboardInterrupt, EOFError):
+        print("\nClosing.")
+    except Exception as exc:
+        LOG.error("Startup failed: %s", exc)
+    finally:
+        app.cleanup()
 
 
-# Only run when this file is executed directly
 if __name__ == "__main__":
     main()
