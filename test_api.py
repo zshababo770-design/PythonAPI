@@ -7,79 +7,102 @@ from dotenv import load_dotenv
 from api_helper import NorenApiPy
 
 
-# Load .env from the script's directory.
-# Existing environment variables take priority.
-load_dotenv(Path(__file__).resolve().parent / ".env")
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 
-def require_env(name):
+def require_env(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
-        raise ValueError(f"{name} is missing or empty")
+        raise ValueError(f"Required environment variable is missing: {name}")
     return value
 
 
-def main():
-    user_token = ""
+def redact(text: str, token: str) -> str:
+    """Remove the session token from application output."""
+    return text.replace(token, "[REDACTED]") if token else text
+
+
+def configure_session(api, user_id: str, token: str) -> None:
+    result = api.set_session(
+        userid=user_id,
+        password="",
+        usertoken=token,
+    )
+
+    # Some SDK versions return None on successful configuration.
+    # The account-limits request below verifies authentication.
+    if result is False:
+        raise RuntimeError("The SDK could not configure the session")
+
+    if isinstance(result, dict) and result.get("stat") == "Not_Ok":
+        raise RuntimeError(
+            result.get("emsg") or "Session configuration failed"
+        )
+
+
+def fetch_limits(api) -> dict:
+    limits = api.get_limits()
+
+    if not isinstance(limits, dict):
+        raise RuntimeError(
+            "No valid account-limits response received. "
+            "Check your connection, user ID, and session token."
+        )
+
+    if limits.get("stat") != "Ok":
+        raise RuntimeError(
+            limits.get("emsg") or "Account-limits request failed"
+        )
+
+    return limits
+
+
+def main() -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(message)s",
+    )
+
+    token = ""
 
     try:
+        # Existing environment variables take priority over .env.
+        env_path = Path(__file__).resolve().parent / ".env"
+        load_dotenv(dotenv_path=env_path, override=False)
+
         user_id = require_env("FLATTRADE_USER_ID")
-        user_token = require_env("FLATTRADE_USER_TOKEN")
+        token = require_env("FLATTRADE_USER_TOKEN")
 
         api = NorenApiPy()
 
         logger.info("Configuring Flattrade API session...")
-
-        session = api.set_session(
-            userid=user_id,
-            password="",
-            usertoken=user_token,
-        )
-
-        # Reject explicit failures without assuming a particular
-        # success return format across SDK versions.
-        if session is False:
-            raise RuntimeError("The SDK could not configure the session")
-
-        if isinstance(session, dict) and session.get("stat") == "Not_Ok":
-            raise RuntimeError(
-                session.get("emsg") or "Session configuration failed"
-            )
+        configure_session(api, user_id, token)
 
         logger.info("Verifying session and fetching account limits...")
-        limits = api.get_limits()
+        limits = fetch_limits(api)
 
-        if not isinstance(limits, dict):
-            raise RuntimeError(
-                "No valid account-limits response received. "
-                "Check your connection, user ID, and session token."
-            )
-
-        if limits.get("stat") != "Ok":
-            raise RuntimeError(
-                limits.get("emsg")
-                or "Account-limits request failed"
-            )
+        # Redact before JSON encoding to handle escaped characters.
+        safe_limits = json.loads(
+            json.dumps(limits),
+            parse_int=int,
+        )
+        output = json.dumps(safe_limits, indent=2, ensure_ascii=False)
+        output = redact(output, token)
 
         logger.info("Session verified successfully.")
-
-        print("\nAccount limits:")
-        print(json.dumps(limits, indent=2, ensure_ascii=False))
+        print(f"\nAccount limits:\n{output}")
         return 0
 
-    except Exception as exc:
-        # Avoid exposing the session token in error messages.
-        message = str(exc)
-        if user_token:
-            message = message.replace(user_token, "[REDACTED]")
+    except KeyboardInterrupt:
+        logger.info("Operation cancelled.")
+        return 130
 
-        logger.error("%s: %s", type(exc).__name__, message)
+    except Exception as exc:
+        logger.error(
+            "%s: %s",
+            type(exc).__name__,
+            redact(str(exc), token),
+        )
         return 1
 
 
